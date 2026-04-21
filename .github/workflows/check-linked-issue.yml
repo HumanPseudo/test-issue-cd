@@ -2,48 +2,54 @@ name: Auto-Link Issue to PR
 
 on:
   pull_request:
-    types: [opened]
+    types: [opened, edited]
 
 jobs:
-  auto-create-issue:
+  auto-link:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
       issues: write
       pull-requests: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-
-      - name: Ensure Issue exists or Create one
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_BODY: ${{ github.event.pull_request.body }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          # Regex to check for linked issues (Fixes #123, etc.)
-          REGEX="(close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)\s+#[0-9]+"
-          
-          if [[ "$PR_BODY" =~ $REGEX ]]; then
-            echo "A linked issue was already found in the PR description."
-          else
-            echo "No linked issue found. Creating one automatically..."
+      - name: Auto-create and link issue
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const body = pr.body || "";
+            const title = pr.title;
+            const prNumber = pr.number;
             
-            # Create the issue and get its number
-            NEW_ISSUE_URL=$(gh issue create \
-              --title "Issue for PR: $PR_TITLE" \
-              --body "This issue was automatically created for PR #$PR_NUMBER.\n\nOriginal PR Description:\n$PR_BODY" \
-              --label "automated")
+            // Regex para detectar vínculos existentes (Fixes #123, etc.)
+            const regex = /(close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)\s+#\d+/i;
             
-            NEW_ISSUE_NUMBER=$(echo $NEW_ISSUE_URL | grep -oE "[0-9]+$")
+            if (regex.test(body)) {
+              console.log("Ya existe un issue vinculado en la descripción.");
+              return;
+            }
             
-            echo "Created Issue #$NEW_ISSUE_NUMBER"
+            console.log("No se encontró issue vinculado. Creando uno nuevo...");
             
-            # Update the PR body to link the new issue
-            UPDATED_BODY="$PR_BODY"$'\n\n'"Fixes #$NEW_ISSUE_NUMBER"
-            gh pr edit $PR_NUMBER --body "$UPDATED_BODY"
+            // 1. Crear el issue
+            const newIssue = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `[AUTO] Issue para PR: ${title}`,
+              body: `Este issue fue creado automáticamente para el PR #${prNumber}.\n\nDescripción original del PR:\n${body}`,
+              labels: ['automated']
+            });
             
-            echo "PR #$PR_NUMBER updated and linked to Issue #$NEW_ISSUE_NUMBER"
-          fi
+            const issueNumber = newIssue.data.number;
+            console.log(`Issue #${issueNumber} creado.`);
+            
+            // 2. Actualizar el PR para vincular el nuevo issue
+            const updatedBody = `${body}\n\nFixes #${issueNumber}`;
+            
+            await github.rest.pulls.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+              body: updatedBody
+            });
+            
+            console.log(`PR #${prNumber} actualizado y vinculado al Issue #${issueNumber}.`);
