@@ -1,3 +1,5 @@
-# Test Issue CD
-\n## Test CI\nTesting linked issue requirement.
-<!-- CI test -->
+mkdir -p docs
+echo "# Test Issue CD
+## Test CI
+Testing linked issue requirement.
+" > docs/test_ci.md
