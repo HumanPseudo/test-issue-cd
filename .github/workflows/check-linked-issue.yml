@@ -1,22 +1,49 @@
-name: Check Linked Issue
+name: Auto-Link Issue to PR
 
 on:
   pull_request:
-    types: [opened, edited, reopened, synchronize]
+    types: [opened]
 
 jobs:
-  check-linked-issue:
+  auto-create-issue:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
     steps:
-      - name: Check for linked issue
-        uses: actions/github-script@v6
-        with:
-          script: |
-            const body = context.payload.pull_request.body;
-            const regex = /(?:close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)\s+#\d+/i;
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Ensure Issue exists or Create one
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          # Regex to check for linked issues (Fixes #123, etc.)
+          REGEX="(close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)\s+#[0-9]+"
+          
+          if [[ "$PR_BODY" =~ $REGEX ]]; then
+            echo "A linked issue was already found in the PR description."
+          else
+            echo "No linked issue found. Creating one automatically..."
             
-            if (!body || !regex.test(body)) {
-              core.setFailed("Please link an issue in the PR description (e.g., 'Fixes #123').");
-            } else {
-              console.log("Found a linked issue in the PR description.");
-            }
+            # Create the issue and get its number
+            NEW_ISSUE_URL=$(gh issue create \
+              --title "Issue for PR: $PR_TITLE" \
+              --body "This issue was automatically created for PR #$PR_NUMBER.\n\nOriginal PR Description:\n$PR_BODY" \
+              --label "automated")
+            
+            NEW_ISSUE_NUMBER=$(echo $NEW_ISSUE_URL | grep -oE "[0-9]+$")
+            
+            echo "Created Issue #$NEW_ISSUE_NUMBER"
+            
+            # Update the PR body to link the new issue
+            UPDATED_BODY="$PR_BODY"$'\n\n'"Fixes #$NEW_ISSUE_NUMBER"
+            gh pr edit $PR_NUMBER --body "$UPDATED_BODY"
+            
+            echo "PR #$PR_NUMBER updated and linked to Issue #$NEW_ISSUE_NUMBER"
+          fi
