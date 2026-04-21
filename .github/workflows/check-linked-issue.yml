@@ -1,0 +1,22 @@
+name: Check Linked Issue
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+jobs:
+  check-linked-issue:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for linked issue
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const body = context.payload.pull_request.body;
+            const regex = /(?:close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)\s+#\d+/i;
+            
+            if (!body || !regex.test(body)) {
+              core.setFailed("Please link an issue in the PR description (e.g., 'Fixes #123').");
+            } else {
+              console.log("Found a linked issue in the PR description.");
+            }
