@@ -9,7 +9,7 @@ on:
 jobs:
   auto-link-issue:
     runs-on: ubuntu-latest
-    if: github.event.action == 'opened'
+    # if: github.event.action == 'opened'
     permissions:
       issues: write
       pull-requests: write
@@ -24,7 +24,7 @@ jobs:
             
             const hasBodyReference = issueReference.test(prBody);
             
-            const { repository: { pullRequest: { closingIssuesReferences } } } } = await github.graphql(`
+            const { repository: { pullRequest: { closingIssuesReferences } } } = await github.graphql(`
               query($owner: String!, $repo: String!, $prNumber: Int!) {
                 repository(owner: $owner, name: $repo) {
                   pullRequest(number: $prNumber) {
