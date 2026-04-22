@@ -1,15 +1,15 @@
-name: Auto-Link Issue
+name: Work Logs CI
 
 on:
   pull_request:
-    types: [opened, synchronize, edited]
+    types: [opened, synchronize]
     branches:
       - main
 
 jobs:
-  auto-link-issue:
+  Check-issue:
     runs-on: ubuntu-latest
-    # if: github.event.action == 'opened'
+    if: github.event.action == 'opened'
     permissions:
       issues: write
       pull-requests: write
@@ -41,17 +41,23 @@ jobs:
             });
             
             const hasLinkedIssue = closingIssuesReferences.nodes.length > 0;
-            
-            if (hasBodyReference || hasLinkedIssue) {
-              return console.log("Existing linked issue found.");
-            }
-
-            console.log("No linked issue found. Posting comment and failing...");
+            const commentBody = [
+              "No linked issue found. Please link an issue to this PR.",
+              "",
+              "You can:",
+              "- Add `Fixes #123` in the PR description",
+              "- Use the **Development** section in the PR sidebar",
+              "",
+              "**Important:** Ensure the linked issue has been properly refined.",
+              "It must follow one of our official templates (**Feature Request** or",
+              "**Bug Report**) with all necessary details filled in."
+            ].join('\n');
+                        
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: prNumber,
-              body: `⚠️ **Warning:** No linked issue found. Please link an issue to this PR.\n\nYou can:\n- Add \`Fixes #123\` in the PR description\n- Or use the Development section in the PR sidebar`
+              body: commentBody
             });
 
             core.setFailed("No linked issue found. Please link an issue to this PR.");
