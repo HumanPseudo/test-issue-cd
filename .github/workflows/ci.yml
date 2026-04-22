@@ -1,54 +1,76 @@
-name: Auto-Link Issue
+name: Work Logs CI
 
 on:
   pull_request:
-    types: [opened, synchronize, edited]
+    types: [opened, synchronize]
     branches:
       - main
 
 jobs:
-  auto-link-issue:
+  Check-issue:
     runs-on: ubuntu-latest
-    # Esta condición garantiza que el script solo actúe cuando el PR se crea.
-    # Si se suben más commits (synchronize) o se edita el texto (edited), el job se saltará.
     if: github.event.action == 'opened'
     permissions:
       issues: write
       pull-requests: write
     steps:
-      - name: Auto-link and Assign
+      - name: Check issue
         uses: actions/github-script@v7
         with:
           script: |
-            const { body: prBody, title: prTitle, number: prNumber, user: { login: prAuthor } } = context.payload.pull_request;
-            
-            // Regex para detectar si el usuario ya puso una palabra de cierre manualmente
-            const closingKeywords = /\b(close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)\s+(#\d+|https:\/\/github\.com\/)/i;
-            
-            if (closingKeywords.test(prBody)) {
-              return console.log("Ya existe una palabra clave de cierre. Saltando creación.");
+            const { body, number: prNumber, title } = context.payload.pull_request;
+            const prBody = body ?? "";
+            const normalizedTitle = (title ?? "").toLowerCase();
+
+            if (normalizedTitle.includes("prepare release")) {
+              core.info("Prepare release PR detected. Skipping issue check.");
+              return;
             }
 
-            console.log("No se encontró vínculo. Creando issue y asignando...");
+            const issueReference = /(?:^|\s)(?:#\d+|https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/issues\/\d+)\b/i;
             
-            // 1. Crear el issue asignado al autor del PR
-            const issue = await github.rest.issues.create({
+            const hasBodyReference = issueReference.test(prBody);
+            
+            const { repository: { pullRequest: { closingIssuesReferences } } } = await github.graphql(`
+              query($owner: String!, $repo: String!, $prNumber: Int!) {
+                repository(owner: $owner, name: $repo) {
+                  pullRequest(number: $prNumber) {
+                    closingIssuesReferences(first: 10) {
+                      nodes { number }
+                    }
+                  }
+                }
+              }
+            `, {
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: `[AUTO] Issue para PR: ${prTitle}`,
-              body: `Issue creado automáticamente para el PR #${prNumber}.\n\nDescripción original:\n${prBody}`,
-              assignees: [prAuthor]
-            });
-
-            const issueNumber = issue.data.number;
-            console.log(`Issue #${issueNumber} creado y asignado a ${prAuthor}.`);
-
-            // 2. Vincular el issue en la descripción del PR para que se cierre al hacer merge
-            await github.rest.pulls.update({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: prNumber,
-              body: `${prBody}\n\nFixes #${issueNumber}`
+              prNumber: prNumber
             });
             
-            console.log(`PR #${prNumber} actualizado con "Fixes #${issueNumber}".`);
+            const hasLinkedIssue = closingIssuesReferences.nodes.length > 0;
+
+            if (hasBodyReference || hasLinkedIssue) {
+              core.info("Linked issue found. Skipping failure.");
+              return;
+            }
+
+            const commentBody = [
+              "No linked issue found. Please link an issue to this PR.",
+              "",
+              "You can:",
+              "- Add `Fixes #123` in the PR description",
+              "- Use the **Development** section in the PR sidebar",
+              "",
+              "**Important:** Ensure the linked issue has been properly refined.",
+              "It must follow one of our official templates (**Feature Request** or",
+              "**Bug Report**) with all necessary details filled in."
+            ].join('\n');
+                        
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: commentBody
+            });
+
+            core.setFailed("No linked issue found. Please link an issue to this PR.");
