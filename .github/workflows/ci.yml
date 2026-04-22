@@ -18,8 +18,15 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const { body, number: prNumber } = context.payload.pull_request;
+            const { body, number: prNumber, title } = context.payload.pull_request;
             const prBody = body ?? "";
+            const normalizedTitle = (title ?? "").toLowerCase();
+
+            if (normalizedTitle.includes("prepare release")) {
+              core.info("Prepare release PR detected. Skipping issue check.");
+              return;
+            }
+
             const issueReference = /(?:^|\s)(?:#\d+|https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/issues\/\d+)\b/i;
             
             const hasBodyReference = issueReference.test(prBody);
@@ -41,6 +48,12 @@ jobs:
             });
             
             const hasLinkedIssue = closingIssuesReferences.nodes.length > 0;
+
+            if (hasBodyReference || hasLinkedIssue) {
+              core.info("Linked issue found. Skipping failure.");
+              return;
+            }
+
             const commentBody = [
               "No linked issue found. Please link an issue to this PR.",
               "",
